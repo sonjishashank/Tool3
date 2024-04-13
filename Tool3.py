@@ -1,12 +1,11 @@
 import io
-from flask import Flask, Response, jsonify, send_file
+from flask import Flask, Response, jsonify
 from flask_cors import CORS
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sqlalchemy import create_engine
 from matplotlib.backends.backend_pdf import PdfPages
-import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -23,51 +22,74 @@ DB_PASSWORD = "Lo2Ze5zVZSRPGxDLCg5WAKUXUfxo7rrZ"
 # Create engine for connecting to PostgreSQL database
 engine = create_engine(f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}")
 
-def plot_crime_occurrence(district_name):
-    # Read data from PostgreSQL into a Pandas DataFrame
-    query = f"SELECT * FROM tool3 WHERE district_name = '{district_name}'"
+# Function to plot crime occurrence for a specific district and unit
+def plot_crime_occurrence(district, unit):
+    # Query to fetch data for the specified district and unit
+    query = f"SELECT * FROM tool3 WHERE district_name = '{district}' AND unitname = '{unit}'"
     df = pd.read_sql_query(query, engine)
 
     if df.empty:
         return None
 
-    # Manually convert the date column to datetime format
+    # Convert date_time to datetime format
     df['date_time'] = pd.to_datetime(df['date_time'])
 
-    # Extract hour, day of week, month, and season from date_time
+    # Extract time periods
     df['hour'] = df['date_time'].dt.hour
     df['day_of_week'] = df['date_time'].dt.dayofweek
     df['month'] = df['date_time'].dt.month
-    df['season'] = df['date_time'].dt.month % 12 // 3 + 1
+    df['season'] = (df['month'] - 1) // 3 + 1
 
-    units = df['unitname'].unique()
+    # Define time periods to plot
     time_periods = ['hour', 'day_of_week', 'month', 'season']
-    pdf_filename = f"{district_name}_crime_occurrence.pdf"
 
+    # Create PDF filename
+    pdf_filename = f"{district}_{unit}_crime_occurrence.pdf"
+
+    # Create PDF file
     with PdfPages(pdf_filename) as pdf_pages:
-        for unit in units:
-            unit_data = df[df['unitname'] == unit]
-            for time_period in time_periods:
-                plt.figure(figsize=(10, 6))
-                sns.countplot(x=time_period, data=unit_data, palette='viridis')
-                plt.title(f'Crime Occurrence by {time_period.capitalize()} in {district_name.title()}, Unit: {unit}')
-                plt.xlabel(time_period.capitalize())
-                plt.ylabel('Number of Crimes')
-                plt.tight_layout()
+        for time_period in time_periods:
+            plt.figure(figsize=(10, 6))
+            sns.countplot(x=time_period, data=df, palette='viridis')
+            plt.title(f'Crime Occurrence by {time_period.capitalize()} in {district.title()}, Unit: {unit}')
+            plt.xlabel(time_period.capitalize())
+            plt.ylabel('Number of Crimes')
+            plt.tight_layout()
+            pdf_pages.savefig()
+            plt.close()
 
-    # Convert the plot to bytes
-    img_bytes = io.BytesIO()
-    plt.savefig(img_bytes, format='pdf')
-    plt.close()
+    # Read the saved PDF file and return it as a byte stream
+    with open(pdf_filename, 'rb') as f:
+        pdf_bytes = f.read()
 
-    return img_bytes.getvalue()
+    return pdf_bytes
 
-# Route for downloading the PDF file
-@app.route('/download/<district>', methods=['GET'])
-def download_pdf(district):
-    pdf_bytes = plot_crime_occurrence(district)
+# Route for downloading the PDF file for a specified district and unit
+@app.route('/download/<district>/<unit>', methods=['GET'])
+def download_pdf(district, unit):
+    pdf_bytes = plot_crime_occurrence(district, unit)
     if pdf_bytes:
-        return Response(pdf_bytes, mimetype='application/pdf',
-                        headers={'Content-Disposition': f'attachment;filename={district}_crime_distribution.pdf'})
+        response = Response(pdf_bytes, mimetype='application/pdf',
+                            headers={'Content-Disposition': f'attachment;filename={district}_{unit}_crime_occurrence.pdf'})
+        return response
     else:
-        return jsonify({"error": "No data available or invalid district"}), 404
+        return jsonify({"error": "No data available or invalid district/unit"}), 404
+
+# Route to get the list of districts
+@app.route('/get_districts', methods=['GET'])
+def get_districts():
+    query = "SELECT DISTINCT district_name FROM tool3"
+    districts_df = pd.read_sql_query(query, engine)
+    districts = districts_df['district_name'].tolist()
+    return jsonify(districts)
+
+# Route to get the list of units based on the selected district
+@app.route('/get_units/<district>', methods=['GET'])
+def get_units(district):
+    query = f"SELECT DISTINCT unitname FROM tool3 WHERE district_name = '{district}'"
+    units_df = pd.read_sql_query(query, engine)
+    units = units_df['unitname'].tolist()
+    return jsonify(units)
+
+if __name__ == '__main__':
+    app.run(debug=True)
