@@ -11,6 +11,9 @@ import os
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+# Set worker timeout to 600 seconds (10 minutes)
+app.config['TIMEOUT'] = 1800
+
 # Database credentials
 DB_HOST = "dpg-cobrpren7f5s73ftpqrg-a.oregon-postgres.render.com"
 DB_DATABASE = "sheshank_sonji"
@@ -68,7 +71,3 @@ def download_pdf(district):
                         headers={'Content-Disposition': f'attachment;filename={district}_crime_distribution.pdf'})
     else:
         return jsonify({"error": "No data available or invalid district"}), 404
-
-
-if __name__ == '__main__':
-    app.run(debug=True)
