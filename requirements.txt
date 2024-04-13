@@ -1,0 +1,13 @@
+Flask
+Flask-Cors
+pandas
+matplotlib
+seaborn
+sqlalchemy
+psycopg2-binary
+Flask
+flask-cors
+pandas
+matplotlib
+seaborn
+sqlalchemy
